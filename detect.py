@@ -15,3 +15,9 @@ def has_suspicious_request_len(dataf):
     ] = 0
     dataf.fillna({"has_suspicious_request_len": 1}, inplace=True)
     return dataf
+
+
+def entropy(s):
+    prob = [float(s.count(c)) / len(s) for c in dict.fromkeys(list(s))]
+    entropy = -sum([p * np.log2(p) for p in prob])
+    return entropy
