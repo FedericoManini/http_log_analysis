@@ -185,9 +185,6 @@ Un passaggio tecnico fondamentale riguarda la mappatura delle classi per la comp
 
 Questo allineamento permette alle funzioni di scoring della Grid Search di interpretare correttamente le anomalie come la classe di interesse da rilevare.
 
-
-
-
 \section{Interpretazione dei risultati}
 
 L'algoritmo Isolation Forest non restituisce un verdetto binario deterministico, bensì un valore di "anomalia" continuo. Mentre i punteggi negativi più profondi identificano record con feature multiple "fuori scala" (ovvero campioni che richiedono pochissimi partizionamenti per essere isolati), i punteggi prossimi allo zero rappresentano una zona di incertezza statistica dove solitamente ricadono i falsi positivi.
@@ -284,3 +281,59 @@ top_anomalies = df[df['anomaly_score']==-1][['request','scores']].sort_values(by
 
 
 Da un'analisi approfondita, emerge che tali richieste non appartengono al "rumore di fondo" generato dai crawler (correttamente filtrati dalla feature \\ \texttt{is\_known\_bot}), ma presentano valori di \texttt{resource\_len} e \texttt{bytes\_num} estremamente distanti dalla media. Ad esempio, le richieste ai temi grafici (Index 327, 59) o i file CSS/JS molto pesanti vengono isolati per la loro mole di dati. Nonostante la loro natura anomala dal punto di vista statistico, essi possono essere classificati come falsi positivi in ambito di sicurezza, rappresentando traffico lecito ma strutturalmente pesante.
+
+\section{Applicazione dell'algoritmo all'intero dataset}
+
+Nelle sezioni precedenti, come indicato in precedenza, per effettuare una fase esplorativa e calibrare i parametri dell'algoritmo, si è proceduto a prendere in considerazione solo i primi 1000 record del dataset.
+
+Per convalidare i risultati si è dunque applicato l'algrotimo all'intero dataset, scoprendo uno dei limiti principali dell'algoritmo di isolation forest. Degli attacchi inseriti manualmente solo uno viene riconosciuto come tale. dei circa 4 milioni di record, circa 100.000 vengono riconosciuti come anomalie e gli attacchi inseriti manualmente vengono classificati come Falsi Negativi.
+
+\begin{figure}[H]
+      \centering
+      \includegraphics[width=\textwidth]{Immagini/Matrice\_di\_confusione\_all.png}
+      \caption{Matrice di confusione applicata all'intero dataset}
+      \label{fig:mdcall}
+\end{figure}
+
+Dopo una più approfondita operazione di clustering ricavato dalla seguente query:
+
+\begin{lstlisting}[style=MatlabStyle, caption={}, label={lst:topanomalies}]
+    top_anomalies = df[df["anomaly_score"] == -1].sort_values(by='scores')
+    top_anomalies_melted = top_anomalies.melt(
+    id_vars='log_id',
+    var_name='categories',
+    value_vars=features_boolean,
+    value_name='value')
+
+active = top_anomalies_melted[top_anomalies_melted["value"] == 1]
+combos = active.groupby("log_id")["categories"].agg(lambda x: ", ".join(tuple(sorted(x)))).reset_index(name='tuple')
+\end{lstlisting}
+
+Si ricava la seguente tabella:
+
+\begin{table}[H]
+      \centering
+      \begin{tabular}{|l|r|}
+            \hline
+            \textbf{Combinazione di Feature}                                         & \textbf{Frequenza} \\
+            \hline
+            is\_known\_bot, special\_chars                                           & 86.654             \\
+            has\_suspicious\_request\_len                                            & 4.033              \\
+            has\_suspicious\_request\_len, is\_known\_bot, special\_chars            & 3.011              \\
+            has\_suspicious\_request\_len, is\_known\_bot                            & 2.879              \\
+            is\_known\_bot                                                           & 2.556              \\
+            has\_suspicious\_request\_len, is\_error                                 & 1.340              \\
+            has\_sql\_keywords, has\_suspicious\_request\_len, is\_error             & 164                \\
+            has\_suspicious\_request\_len, is\_error, is\_known\_bot                 & 131                \\
+            is\_error, is\_known\_bot, special\_chars                                & 86                 \\
+            has\_suspicious\_request\_len, special\_chars                            & 68                 \\
+            is\_error, is\_known\_bot                                                & 34                 \\
+            has\_sql\_keywords, has\_suspicious\_request\_len                        & 15                 \\
+            is\_error                                                                & 4                  \\
+            has\_suspicious\_request\_len, is\_error, is\_known\_bot, special\_chars & 1                  \\
+            \hline
+      \end{tabular}
+      \caption{Report di classificazione delle occorrenze per combinazione di feature.}
+\end{table}
+
+Appare quindi evidente che il rumore di fondo generato dai web crawler offuschi quelli che l'algoritmo dovrebbe catalogare come attacchi.
